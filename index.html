@@ -1,0 +1,182 @@
+<html><head><base href="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/">
+<meta charset="utf-8">
+<title>Theme Park Explorer</title>
+<style>
+    body { margin: 0; overflow: hidden; }
+    canvas { width: 100%; height: 100%; display: block; }
+    #ui { position: absolute; top: 10px; left: 10px; color: white; font-family: Arial, sans-serif; background-color: rgba(0,0,0,0.5); padding: 10px; border-radius: 5px; }
+    #instructions { position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); text-align: center; color: white; font-family: Arial, sans-serif; background-color: rgba(0,0,0,0.7); padding: 20px; border-radius: 10px; }
+</style>
+</head>
+<body>
+    <div id="ui">
+        <div id="position"></div>
+        <div id="attraction"></div>
+    </div>
+    <div id="instructions">
+        <h1>Theme Park Explorer</h1>
+        <p>Click to start</p>
+        <p>WASD to move, Mouse to look around</p>
+        <p>ESC to pause</p>
+    </div>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/PointerLockControls.js"></script>
+    <script>
+        let scene, camera, renderer, controls;
+        let park = [];
+        let currentAttraction = null;
+        let moveForward = false, moveBackward = false, moveLeft = false, moveRight = false;
+        let prevTime = performance.now();
+        const velocity = new THREE.Vector3();
+
+        function init() {
+            scene = new THREE.Scene();
+            scene.background = new THREE.Color(0x87CEEB);  // Sky blue
+            camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
+            camera.position.y = 1.6;  // Average human height
+
+            renderer = new THREE.WebGLRenderer();
+            renderer.setSize(window.innerWidth, window.innerHeight);
+            document.body.appendChild(renderer.domElement);
+
+            // Lighting
+            const ambientLight = new THREE.AmbientLight(0x404040);
+            scene.add(ambientLight);
+            const directionalLight = new THREE.DirectionalLight(0xffffff, 0.5);
+            directionalLight.position.set(1, 1, 1);
+            scene.add(directionalLight);
+
+            // Ground
+            const groundTexture = new THREE.TextureLoader().load('https://threejsfundamentals.org/threejs/resources/images/grass.jpg');
+            groundTexture.wrapS = THREE.RepeatWrapping;
+            groundTexture.wrapT = THREE.RepeatWrapping;
+            groundTexture.repeat.set(100, 100);
+            const groundMaterial = new THREE.MeshLambertMaterial({map: groundTexture});
+            const groundGeometry = new THREE.PlaneGeometry(1000, 1000);
+            const groundMesh = new THREE.Mesh(groundGeometry, groundMaterial);
+            groundMesh.rotation.x = -Math.PI / 2;
+            scene.add(groundMesh);
+
+            // Attractions
+            addAttraction('Ferris Wheel', 0, 0, 50);
+            addAttraction('Roller Coaster', 100, 0, 30);
+            addAttraction('Carousel', -100, 0, 20);
+            addAttraction('Haunted House', 0, 100, 25);
+            addAttraction('Bumper Cars', -50, -50, 15);
+
+            // Controls
+            controls = new THREE.PointerLockControls(camera, renderer.domElement);
+            scene.add(controls.getObject());
+
+            document.addEventListener('click', () => {
+                controls.lock();
+                document.getElementById('instructions').style.display = 'none';
+            });
+
+            controls.addEventListener('unlock', () => {
+                document.getElementById('instructions').style.display = 'block';
+            });
+
+            // Movement
+            const onKeyDown = function (event) {
+                switch (event.code) {
+                    case 'KeyW': moveForward = true; break;
+                    case 'KeyA': moveLeft = true; break;
+                    case 'KeyS': moveBackward = true; break;
+                    case 'KeyD': moveRight = true; break;
+                }
+            };
+
+            const onKeyUp = function (event) {
+                switch (event.code) {
+                    case 'KeyW': moveForward = false; break;
+                    case 'KeyA': moveLeft = false; break;
+                    case 'KeyS': moveBackward = false; break;
+                    case 'KeyD': moveRight = false; break;
+                }
+            };
+
+            document.addEventListener('keydown', onKeyDown);
+            document.addEventListener('keyup', onKeyUp);
+
+            window.addEventListener('resize', onWindowResize, false);
+
+            animate();
+        }
+
+        function addAttraction(name, x, z, size) {
+            const geometry = new THREE.BoxGeometry(size, size, size);
+            const material = new THREE.MeshPhongMaterial({color: Math.random() * 0xffffff});
+            const attraction = new THREE.Mesh(geometry, material);
+            attraction.position.set(x, size / 2, z);
+            attraction.name = name;
+            scene.add(attraction);
+            park.push(attraction);
+        }
+
+        function animate() {
+            requestAnimationFrame(animate);
+
+            if (controls.isLocked === true) {
+                const time = performance.now();
+                const delta = (time - prevTime) / 1000;
+
+                velocity.x -= velocity.x * 10.0 * delta;
+                velocity.z -= velocity.z * 10.0 * delta;
+
+                if (moveForward) velocity.z -= 400.0 * delta;
+                if (moveBackward) velocity.z += 400.0 * delta;
+                if (moveLeft) velocity.x -= 400.0 * delta;
+                if (moveRight) velocity.x += 400.0 * delta;
+
+                controls.moveRight(-velocity.x * delta);
+                controls.moveForward(-velocity.z * delta);
+
+                prevTime = time;
+            }
+
+            updatePosition();
+            checkAttractions();
+
+            renderer.render(scene, camera);
+        }
+
+        function updatePosition() {
+            const position = controls.getObject().position;
+            document.getElementById('position').textContent = `Position: (${position.x.toFixed(2)}, ${position.y.toFixed(2)}, ${position.z.toFixed(2)})`;
+        }
+
+        function checkAttractions() {
+            const position = controls.getObject().position;
+            let nearestAttraction = null;
+            let nearestDistance = Infinity;
+
+            for (let attraction of park) {
+                const distance = position.distanceTo(attraction.position);
+                if (distance < nearestDistance) {
+                    nearestDistance = distance;
+                    nearestAttraction = attraction;
+                }
+            }
+
+            if (nearestAttraction && nearestDistance < 30) {
+                if (nearestAttraction !== currentAttraction) {
+                    currentAttraction = nearestAttraction;
+                    document.getElementById('attraction').textContent = `Nearest Attraction: ${currentAttraction.name}`;
+                }
+            } else {
+                currentAttraction = null;
+                document.getElementById('attraction').textContent = '';
+            }
+        }
+
+        function onWindowResize() {
+            camera.aspect = window.innerWidth / window.innerHeight;
+            camera.updateProjectionMatrix();
+            renderer.setSize(window.innerWidth, window.innerHeight);
+        }
+
+        init();
+    </script>
+</body>
+</html>
